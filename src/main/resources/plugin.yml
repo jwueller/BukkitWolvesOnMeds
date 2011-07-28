@@ -1,0 +1,10 @@
+author: Elusive92
+database: false
+description: Heals tamed wolves over time or while sleeping.
+generator: http://dinnerbone.com/minecraft/tools/pluginator/
+main: net.elusive92.bukkit.wolvesonmeds.WolvesOnMeds
+name: WolvesOnMeds
+startup: postworld
+
+# Warning: Remember to update the version in pom.xml, too!
+version: '1.0'
