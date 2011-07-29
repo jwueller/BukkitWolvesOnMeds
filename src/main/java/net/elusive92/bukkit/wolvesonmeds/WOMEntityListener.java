@@ -86,8 +86,7 @@ public class WOMEntityListener extends EntityListener {
     }
 
     /**
-     * Removes dead wolves from the managed list (even instantly healed entities
-     * are able to die if the initial damage is too high).
+     * Removes dead wolves from the managed list.
      * 
      * @param event 
      */
