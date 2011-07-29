@@ -1,6 +1,6 @@
 author: Elusive92
 database: false
-description: Heals tamed wolves over time or while sleeping.
+description: Heals tamed wolves over time.
 generator: http://dinnerbone.com/minecraft/tools/pluginator/
 main: net.elusive92.bukkit.wolvesonmeds.WolvesOnMeds
 name: WolvesOnMeds

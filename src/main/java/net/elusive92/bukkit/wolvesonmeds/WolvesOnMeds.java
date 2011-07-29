@@ -57,7 +57,7 @@ public class WolvesOnMeds extends JavaPlugin {
         config.load();
 
         // Convert seconds to ticks.
-        long recoveryTicks = config.getInt("recover.duration", 0) * 20;
+        long recoveryTicks = config.getInt("heal.duration", 0) * 20;
 
         // Very low values will be almost equal to instant healing, so we use
         // that to save CPU cycles.

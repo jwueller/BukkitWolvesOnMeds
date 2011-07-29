@@ -23,8 +23,7 @@ public class WOMConfiguration extends Configuration {
 
     // Defines the default configuration values.
     static {
-        defaults.put("recover.duration", new Integer(60));
-        defaults.put("recover.while-sleeping", true);
+        defaults.put("heal.duration", new Integer(60));
         defaults.put("debug", false);
     }
     
