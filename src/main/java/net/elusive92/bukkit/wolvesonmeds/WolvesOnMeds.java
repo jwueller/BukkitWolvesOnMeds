@@ -70,7 +70,7 @@ public class WolvesOnMeds extends JavaPlugin {
      */
     public void onEnable() {
         // Load the configuration every time the plugin is enabled. This needs
-        // to be done at first to prevent angry asserts from eating our souls.
+        // to be done first to prevent missing properties from eating our souls.
         config.load();
         
         // Determine the minimum and maximum health. A health value needs to be
