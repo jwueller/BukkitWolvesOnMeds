@@ -158,7 +158,7 @@ public class WolvesOnMeds extends JavaPlugin {
     }
     
     /**
-     * Actually heals the wounded wolves.
+     * Actually heals the wounded wolves. This method is thread safe.
      */
     /* package */ void heal() {
         // Do not do anything if there are no wolves to be healed.
