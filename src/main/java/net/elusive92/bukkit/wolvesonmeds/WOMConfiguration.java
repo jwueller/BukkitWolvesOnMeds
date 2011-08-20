@@ -17,21 +17,23 @@ public class WOMConfiguration extends Configuration {
     private static final String filename = "plugins/WolvesOnMeds/config.yml";
     
     /**
-     * Stores the default configuration values.
-     */
-    private static final Map<String, Object> defaults = new HashMap<String, Object>();
-
-    // Defines the default configuration values.
-    static {
-        defaults.put("heal.duration", new Integer(60));
-        defaults.put("debug", false);
-    }
-    
-    /**
      * Stores a reference to the main plugin class.
      */
     private final WolvesOnMeds plugin;
-
+    
+    /**
+     * Stores the default values of all properties.
+     */
+    private static final Map<String, Object> defaults = new HashMap<String, Object>();
+    
+    static {
+        defaults.put("heal.duration",   new Integer(60));
+        defaults.put("heal.delay",      new Integer(10));
+        defaults.put("heal.min-health", new Integer(1));
+        defaults.put("heal.max-health", new Integer(20));
+        defaults.put("debug",           false);
+    }
+    
     /**
      * Creates a configuration.
      * 
@@ -43,28 +45,49 @@ public class WOMConfiguration extends Configuration {
     }
     
     /**
-     * Loads the configuration and ensures that the configuration file contains
-     * all possible configuration options.
+     * (Re)Loads the configuration and ensures that the configuration file does
+     * not contain any invalid configuration options.
      */
-    @Override
     public void load() {
         super.load();
-
-        // Set defaults.
+        
+        // Set file header.
         setHeader("# " + plugin + "\n# " + new Date());
-
-        for (Map.Entry<String, Object> entry : defaults.entrySet()) {
-            Object currentValue = getProperty(entry.getKey());
-
-            // Set the default if the property is missing.
-            if (currentValue == null) {
-                setProperty(entry.getKey(), entry.getValue());
+        
+        // Normalize the configuration. We ignore unknown properties.
+        for (Map.Entry<String, Object> item : defaults.entrySet()) {
+            String property = item.getKey();
+            
+            // Use the defaults if the property is not present in the
+            // configuration file.
+            if (getProperty(property) == null) {
+                setProperty(property, item.getValue());
             }
         }
 
-        // Write to disc.
+        // Persist the validated configuration.
         if (!save()) {
             plugin.log("Could not save configuration to " + filename + "! Please check the file permissions.");
         }
+    }
+    
+    /**
+     * Returns a value for a integer property.
+     * 
+     * @param property
+     * @return value
+     */
+    public int getInt(String property) {
+        return super.getInt(property, (Integer) defaults.get(property));
+    }
+    
+    /**
+     * Returns a value for a boolean property.
+     * 
+     * @param property
+     * @return value
+     */
+    public boolean getBoolean(String property) {
+        return super.getBoolean(property, (Boolean) defaults.get(property));
     }
 }

@@ -1,7 +1,10 @@
 package net.elusive92.bukkit.wolvesonmeds;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
@@ -12,13 +15,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class WolvesOnMeds extends JavaPlugin {
-
-    /**
-     * Stores the maximum health a wolf can have. This is probably not going to
-     * change anytime soon, but having a label for it makes the code a lot
-     * easier to read and maintain.
-     */
-    private static final int maxHealth = 20;
     
     /**
      * Stores the configuration handler.
@@ -38,39 +34,56 @@ public class WolvesOnMeds extends JavaPlugin {
     private Set<Wolf> recoveringWolves = Collections.synchronizedSet(new HashSet<Wolf>());
     
     /**
-     * Stores wether to manage wolf health instantly.
+     * Stores the time (in ticks) until a wolf starts to recover. Attacking a
+     * wolf will reset the delay to the configured value to avoid instant
+     * healing after combat.
      */
-    private boolean recoverInstantly = false;
+    private Map<Wolf, Integer> recoveryDelays = Collections.synchronizedMap(new HashMap<Wolf, Integer>());
 
     /**
-     * Shuts down the plugin.
+     * Stores the maximum health a wolf can be healed to.
      */
-    public void onDisable() {
-        System.out.println(this + " is now disabled!");
-    }
+    private static int maxHealth;
+    
+    /**
+     * Stores the minimum health a wolf needs for automatic recovery.
+     */
+    private static int minHealth;
+    
+    /**
+     * Stores the number of ticks needed to heal a wolf from 0-100% health.
+     */
+    private long recoveryDurationTicks;
+    
+    /**
+     * Stores wether to dispatch wolf health instantly.
+     */
+    private boolean recoverInstantly = false;
+    
+    /**
+     * Stores the interval (in ticks) at which the wolves get healed.
+     */
+    private long healIntervalTicks;
 
     /**
      * Initializes the plugin.
      */
     public void onEnable() {
-        // Load the configuration every time the plugin is enabled.
+        // Load the configuration every time the plugin is enabled. This needs
+        // to be done at first to prevent angry asserts from eating our souls.
         config.load();
+        
+        // Determine the minimum and maximum health. A health value needs to be
+        // in the range from 1 to 20.
+        maxHealth = Math.min(Math.max(config.getInt("heal.max-health"), 1), 20);
+        minHealth = Math.min(Math.max(config.getInt("heal.min-health"), 1), 20);
 
         // Convert seconds to ticks.
-        long recoveryTicks = config.getInt("heal.duration", 0) * 20;
+        recoveryDurationTicks = config.getInt("heal.duration") * 20;
 
         // Very low values will be almost equal to instant healing, so we use
         // that to save CPU cycles.
-        recoverInstantly = recoveryTicks <= 20; // 1 second
-
-        // Find all wounded tamed wolves that are currently on the server.
-        for (World world : getServer().getWorlds()) {
-            for (Entity entity : world.getEntities()) {
-                if (entity instanceof Wolf) {
-                    manage((Wolf) entity);
-                }
-            }
-        }
+        recoverInstantly = recoveryDurationTicks <= 20; // 1 second
 
         // Register event listeners.
         registerEvent(Type.CREATURE_SPAWN, entityListener);
@@ -78,12 +91,21 @@ public class WolvesOnMeds extends JavaPlugin {
         registerEvent(Type.ENTITY_DEATH, entityListener);
         registerEvent(Type.ENTITY_TAME, entityListener);
 
+        // Find all wounded tamed wolves that are currently on the server.
+        for (World world : getServer().getWorlds()) {
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof Wolf) {
+                    dispatch((Wolf) entity);
+                }
+            }
+        }
+
         // We need to do some additional setup for timed recovery.
         if (!recoverInstantly) {
-            long healInterval = recoveryTicks / maxHealth;
+            healIntervalTicks = recoveryDurationTicks / maxHealth;
 
             // Try to schedule our healing task.
-            int taskId = getServer().getScheduler().scheduleSyncRepeatingTask(this, new WOMHealTask(this), 0L, healInterval);
+            int taskId = getServer().getScheduler().scheduleSyncRepeatingTask(this, new WOMHealTask(this), 0L, healIntervalTicks);
 
             // Use instant recovery if the task could not be scheduled. It is
             // better than nothing.
@@ -95,6 +117,13 @@ public class WolvesOnMeds extends JavaPlugin {
 
         System.out.println(this + " is now enabled!");
     }
+
+    /**
+     * Shuts down the plugin.
+     */
+    public void onDisable() {
+        System.out.println(this + " is now disabled!");
+    }
     
     /**
      * Decides what to do with the wolf. If he can recover, he is either healed
@@ -103,15 +132,15 @@ public class WolvesOnMeds extends JavaPlugin {
      * @param wolf 
      * @param health to check against to determine if the wolf is wounded
      */
-    public void manage(Wolf wolf, int health) {
+    /* package */ void dispatch(Wolf wolf, int health) {
         if (wolf.isTamed() && health < maxHealth) {
-            if (recoverInstantly) {
-                debug("Wolf " + wolf.getUniqueId() + " was healed instantly");
+            if (!recoverInstantly) {
+                recoveringWolves.add(wolf);
+                debug("Wolf " + wolf.getUniqueId() + " was scheduled for timed recovery.");
+            } else {
                 wolf.setHealth(maxHealth);
                 recoveringWolves.remove(wolf);
-            } else {
-                debug("Wolf " + wolf.getUniqueId() + " was scheduled for timed recovery");
-                recoveringWolves.add(wolf);
+                debug("Wolf " + wolf.getUniqueId() + " was healed instantly.");
             }
         } else {
             recoveringWolves.remove(wolf);
@@ -124,8 +153,42 @@ public class WolvesOnMeds extends JavaPlugin {
      * 
      * @param wolf
      */
-    public void manage(Wolf wolf) {
-        manage(wolf, wolf.getHealth());
+    /* package */ void dispatch(Wolf wolf) {
+        dispatch(wolf, wolf.getHealth());
+    }
+    
+    /**
+     * Actually heals the wounded wolves.
+     */
+    /* package */ void heal() {
+        // Do not do anything if there are no wolves to be healed.
+        if (recoveringWolves.isEmpty()) {
+            return;
+        }
+
+        // We need to use an iterator to allow for removing elements while
+        // iterating.
+        Iterator<Wolf> itr = recoveringWolves.iterator();
+
+        while (itr.hasNext()) {
+            Wolf wolf = itr.next();
+            
+            // Calculate the target health for the wolf.
+            int newHealth = wolf.getHealth() + 1;
+
+            // Did we reach the maximum health?
+            if (newHealth < maxHealth) {
+                wolf.setHealth(newHealth);
+            } else {
+                wolf.setHealth(maxHealth);
+
+                // We need to make sure that the wolf is removed from the list
+                // of wounded tamed wolves after it has been healed.
+                itr.remove();
+            }
+            
+            debug("Wolf " + wolf.getUniqueId() + " was healed to " + wolf.getHealth() + "/" + maxHealth + ".");
+        }
     }
 
     /**
@@ -139,39 +202,12 @@ public class WolvesOnMeds extends JavaPlugin {
     }
 
     /**
-     * Returns the maximum health for wolves.
-     * 
-     * @return maximum wolf health
-     */
-    public int getMaxHealth() {
-        return maxHealth;
-    }
-
-    /**
-     * Returns wether wounded tamed wolves are present on the server.
-     * 
-     * @return existance
-     */
-    public boolean hasRecoveringWolves() {
-        return !recoveringWolves.isEmpty();
-    }
-
-    /**
-     * Returns a set of wounded tamed wolves.
-     * 
-     * @return set of wolves
-     */
-    public Set<Wolf> getRecoveringWolves() {
-        return recoveringWolves;
-    }
-
-    /**
      * Reports an arbitrary string to the server console and automatically
      * prepend the plugin name to ease message source identification.
      * 
      * @param message
      */
-    public void log(String message) {
+    /*package*/ void log(String message) {
         System.out.println(getDescription().getName() + ": " + message);
     }
     
@@ -180,8 +216,8 @@ public class WolvesOnMeds extends JavaPlugin {
      * 
      * @param message 
      */
-    public void debug(String message) {
-        if (config.getBoolean("debug", false)) {
+    /*package*/ void debug(String message) {
+        if (config.getBoolean("debug")) {
             log("DEBUG: " + message);
         }
     }

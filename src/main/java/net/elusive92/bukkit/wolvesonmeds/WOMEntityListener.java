@@ -41,7 +41,7 @@ public class WOMEntityListener extends EntityListener {
         Entity entity = event.getEntity();
         
         if (entity instanceof Wolf) {
-            plugin.manage((Wolf) entity);
+            plugin.dispatch((Wolf) entity);
         }
     }
     
@@ -59,7 +59,7 @@ public class WOMEntityListener extends EntityListener {
         Entity entity = event.getEntity();
         
         if (entity instanceof Wolf) {
-            plugin.manage((Wolf) entity);
+            plugin.dispatch((Wolf) entity);
         }
     }
 
@@ -81,7 +81,7 @@ public class WOMEntityListener extends EntityListener {
             
             // We need to override the health manually, since the damage is not
             // yet included in the health property of the wolf.
-            plugin.manage(wolf, wolf.getHealth() - event.getDamage());
+            plugin.dispatch(wolf, wolf.getHealth() - event.getDamage());
         }
     }
 
@@ -96,7 +96,7 @@ public class WOMEntityListener extends EntityListener {
         
         // Ensure that dead wolves are removed from the managed list.
         if (entity instanceof Wolf) {
-            plugin.getRecoveringWolves().remove((Wolf) entity);
+            plugin.dispatch((Wolf) entity);
         }
     }
 }
