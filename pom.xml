@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.elusive92.bukkit.wolvesonmeds</groupId>
     <artifactId>WolvesOnMeds</artifactId>
-    <version>1.0</version>
+    <version>1.1</version>
     <name>WolvesOnMeds</name>
     <repositories>
         <repository>
@@ -30,6 +30,11 @@
             <version>0.0.1-SNAPSHOT</version>
             <type>jar</type>
             <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.bukkit</groupId>
+            <artifactId>craftbukkit</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
         </dependency>
     </dependencies>
 </project>

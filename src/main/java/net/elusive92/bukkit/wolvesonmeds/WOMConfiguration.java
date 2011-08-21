@@ -29,8 +29,13 @@ public class WOMConfiguration extends Configuration {
     static {
         defaults.put("heal.duration",   new Integer(60));
         defaults.put("heal.delay",      new Integer(10));
-        defaults.put("heal.min-health", new Integer(1));
-        defaults.put("heal.max-health", new Integer(20));
+        
+        // Dead wolves (with 0 health) cannot be healed, but this will look
+        // better in the configuration and the validation will convert it to the
+        // lowest valid value.
+        defaults.put("heal.min-health", new Integer(0));
+        defaults.put("heal.max-health", new Integer(100));
+        
         defaults.put("debug",           false);
     }
     

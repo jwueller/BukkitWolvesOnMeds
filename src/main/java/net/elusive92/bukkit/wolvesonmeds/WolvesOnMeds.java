@@ -6,12 +6,15 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.server.EntityLiving;
 import org.bukkit.World;
+import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Wolf;
 import org.bukkit.event.Event.Priority;
 import org.bukkit.event.Event.Type;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityRegainHealthEvent.RegainReason;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class WolvesOnMeds extends JavaPlugin {
@@ -38,7 +41,7 @@ public class WolvesOnMeds extends JavaPlugin {
      * wolf will reset the delay to the configured value to avoid instant
      * healing after combat.
      */
-    private Map<Wolf, Integer> recoveryDelays = Collections.synchronizedMap(new HashMap<Wolf, Integer>());
+    private Map<Wolf, Long> recoveryDelays = Collections.synchronizedMap(new HashMap<Wolf, Long>());
 
     /**
      * Stores the maximum health a wolf can be healed to.
@@ -51,19 +54,20 @@ public class WolvesOnMeds extends JavaPlugin {
     private static int minHealth;
     
     /**
-     * Stores the number of ticks needed to heal a wolf from 0-100% health.
+     * Stores the amount of ticks required to heal a wolf from 0-100% health.
      */
     private long recoveryDurationTicks;
     
     /**
-     * Stores wether to dispatch wolf health instantly.
+     * Stores the amount of ticks to wait before starting to heal a wolf after
+     * combat.
      */
-    private boolean recoverInstantly = false;
+    private long recoveryDelayTicks;
     
     /**
      * Stores the interval (in ticks) at which the wolves get healed.
      */
-    private long healIntervalTicks;
+    private long recoveryIntervalTicks;
 
     /**
      * Initializes the plugin.
@@ -75,15 +79,16 @@ public class WolvesOnMeds extends JavaPlugin {
         
         // Determine the minimum and maximum health. A health value needs to be
         // in the range from 1 to 20.
-        maxHealth = Math.min(Math.max(config.getInt("heal.max-health"), 1), 20);
-        minHealth = Math.min(Math.max(config.getInt("heal.min-health"), 1), 20);
+        maxHealth = getHealthUnits(config.getInt("heal.max-health"));
+        minHealth = getHealthUnits(config.getInt("heal.min-health"));
+        debug("max health: " + maxHealth + "; min health: " + minHealth);
 
         // Convert seconds to ticks.
-        recoveryDurationTicks = config.getInt("heal.duration") * 20;
-
-        // Very low values will be almost equal to instant healing, so we use
-        // that to save CPU cycles.
-        recoverInstantly = recoveryDurationTicks <= 20; // 1 second
+        recoveryDurationTicks = Math.max(config.getInt("heal.duration"), 1) * 20;
+        recoveryDelayTicks = config.getInt("heal.delay") * 20;
+        
+        // Calculate the interval at which the wolves should be healed.
+        recoveryIntervalTicks = recoveryDurationTicks / maxHealth;
 
         // Register event listeners.
         registerEvent(Type.CREATURE_SPAWN, entityListener);
@@ -95,24 +100,14 @@ public class WolvesOnMeds extends JavaPlugin {
         for (World world : getServer().getWorlds()) {
             for (Entity entity : world.getEntities()) {
                 if (entity instanceof Wolf) {
-                    dispatch((Wolf) entity);
+                    dispatch((Wolf) entity, null);
                 }
             }
         }
 
-        // We need to do some additional setup for timed recovery.
-        if (!recoverInstantly) {
-            healIntervalTicks = recoveryDurationTicks / maxHealth;
-
-            // Try to schedule our healing task.
-            int taskId = getServer().getScheduler().scheduleSyncRepeatingTask(this, new WOMHealTask(this), 0L, healIntervalTicks);
-
-            // Use instant recovery if the task could not be scheduled. It is
-            // better than nothing.
-            if (taskId == -1) {
-                recoverInstantly = true;
-                log("Failed to schedule wolf healing task. Falling back to instant recovery.");
-            }
+        // Try to schedule our healing task.
+        if (getServer().getScheduler().scheduleSyncRepeatingTask(this, new WOMHealTask(this), 0L, recoveryIntervalTicks) == -1) {
+            log("Failed to schedule wolf healing task.");
         }
 
         System.out.println(this + " is now enabled!");
@@ -129,38 +124,44 @@ public class WolvesOnMeds extends JavaPlugin {
      * Decides what to do with the wolf. If he can recover, he is either healed
      * instantly or queued for timed healing.
      * 
-     * @param wolf 
-     * @param health to check against to determine if the wolf is wounded
+     * @param wolf
+     * @param health explicit health value to check against to determine if the
+     *        wolf is wounded (it is automatically inserted if it is null)
      */
-    /* package */ void dispatch(Wolf wolf, int health) {
-        if (wolf.isTamed() && health < maxHealth) {
-            if (!recoverInstantly) {
-                recoveringWolves.add(wolf);
-                debug("Wolf " + wolf.getUniqueId() + " was scheduled for timed recovery.");
-            } else {
-                wolf.setHealth(maxHealth);
-                recoveringWolves.remove(wolf);
-                debug("Wolf " + wolf.getUniqueId() + " was healed instantly.");
-            }
+    /*package*/ void dispatch(Wolf wolf, Integer health) {
+        // Insert the current health of the entity if no explicit health is
+        // specified.
+        if (health == null) {
+            health = wolf.getHealth();
+        }
+        
+        // Tamed wounded wolves get added to the set of recovering wolves if
+        // their maximum recovery health is not reached
+        if (wolf.isTamed() && health < maxHealth && health >= minHealth) {
+            recoveringWolves.add(wolf);
+            debug("Wolf " + wolf + " is recovering.");
         } else {
+            // Remove all references to wolves that have recovered successfully.
             recoveringWolves.remove(wolf);
+            recoveryDelays.remove(wolf);
         }
     }
     
     /**
-     * Shortcut that automatically inserts the living entity health to check
-     * against.
+     * Resets the recovery delay for a wolf.
      * 
-     * @param wolf
+     * @param wolf 
      */
-    /* package */ void dispatch(Wolf wolf) {
-        dispatch(wolf, wolf.getHealth());
+    /*package*/ void resetDelay(Wolf wolf) {
+        if (recoveryDelayTicks > 0 && recoveringWolves.contains(wolf)) {
+            recoveryDelays.put(wolf, recoveryDelayTicks);
+        }
     }
     
     /**
      * Actually heals the wounded wolves. This method is thread safe.
      */
-    /* package */ void heal() {
+    /*package*/ void heal() {
         // Do not do anything if there are no wolves to be healed.
         if (recoveringWolves.isEmpty()) {
             return;
@@ -173,22 +174,45 @@ public class WolvesOnMeds extends JavaPlugin {
         while (itr.hasNext()) {
             Wolf wolf = itr.next();
             
-            // Calculate the target health for the wolf.
-            int newHealth = wolf.getHealth() + 1;
-
-            // Did we reach the maximum health?
-            if (newHealth < maxHealth) {
-                wolf.setHealth(newHealth);
-            } else {
-                wolf.setHealth(maxHealth);
-
-                // We need to make sure that the wolf is removed from the list
-                // of wounded tamed wolves after it has been healed.
-                itr.remove();
+            // Process the recovery delay.
+            if (recoveryDelayTicks > 0 && recoveryDelays.containsKey(wolf)) {
+                long remainingDelay = recoveryDelays.get(wolf) - recoveryIntervalTicks;
+                
+                // Decrease the remaining delay.
+                if (remainingDelay > 0) {
+                    recoveryDelays.put(wolf, remainingDelay);
+                    debug("Decreased the delay of wolf " + wolf + " to " + ((double) remainingDelay) / 20.0 + " seconds.");
+                    
+                    // Do not heal this wolf, since the remaining delay is not
+                    // zero yet.
+                    continue;
+                } else {
+                    recoveryDelays.remove(wolf);
+                }
             }
             
-            debug("Wolf " + wolf.getUniqueId() + " was healed to " + wolf.getHealth() + "/" + maxHealth + ".");
+            // Heal the wolf.
+            ((EntityLiving) ((CraftEntity) wolf).getHandle()).b(1, RegainReason.REGEN); // craftbukkit call
+            debug("Wolf " + wolf + " was healed to " + wolf.getHealth() + "/" + maxHealth + ".");
+            
+            // We need to make sure that the wolf is removed from the set of
+            // wounded tamed wolves after it has been completely healed.
+            if (wolf.getHealth() == maxHealth) {
+                itr.remove();
+                debug("Wolf " + wolf + " has recovered.");
+            }
         }
+    }
+    
+    /**
+     * Converts a health configuration value (range from 0 to 100) to a real
+     * health unit and ensures that it is in the valid range (1 to 20).
+     * 
+     * @param 
+     * @return health unit
+     */
+    private int getHealthUnits(int health) {
+        return Math.min(Math.max((int) Math.ceil(((double) health) / 5.0), 1), 20);
     }
 
     /**
