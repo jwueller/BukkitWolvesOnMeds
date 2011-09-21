@@ -6,15 +6,13 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.server.EntityLiving;
 import org.bukkit.World;
-import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Wolf;
 import org.bukkit.event.Event.Priority;
 import org.bukkit.event.Event.Type;
 import org.bukkit.event.Listener;
-import org.bukkit.event.entity.EntityRegainHealthEvent.RegainReason;
+import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class WolvesOnMeds extends JavaPlugin {
@@ -136,7 +134,7 @@ public class WolvesOnMeds extends JavaPlugin {
         }
         
         // Tamed wounded wolves get added to the set of recovering wolves if
-        // their maximum recovery health is not reached
+        // their maximum recovery health is not reached.
         if (wolf.isTamed() && health < maxHealth && health >= minHealth) {
             recoveringWolves.add(wolf);
             debug("Wolf " + wolf + " is recovering.");
@@ -192,14 +190,19 @@ public class WolvesOnMeds extends JavaPlugin {
             }
             
             // Heal the wolf.
-            ((EntityLiving) ((CraftEntity) wolf).getHandle()).b(1, RegainReason.REGEN); // craftbukkit call
-            debug("Wolf " + wolf + " was healed to " + wolf.getHealth() + "/" + maxHealth + ".");
+            EntityRegainHealthEvent event = new EntityRegainHealthEvent(wolf, 1, EntityRegainHealthEvent.RegainReason.REGEN);
+            getServer().getPluginManager().callEvent(event);
             
-            // We need to make sure that the wolf is removed from the set of
-            // wounded tamed wolves after it has been completely healed.
-            if (wolf.getHealth() == maxHealth) {
-                itr.remove();
-                debug("Wolf " + wolf + " has recovered.");
+            if (!event.isCancelled()) {
+                wolf.setHealth(Math.min(wolf.getHealth() + event.getAmount(), 20));
+                debug("Wolf " + wolf + " was healed to " + wolf.getHealth() + "/" + maxHealth + ".");
+
+                // We need to make sure that the wolf is removed from the set of
+                // wounded tamed wolves after it has been completely healed.
+                if (wolf.getHealth() >= maxHealth) {
+                    itr.remove();
+                    debug("Wolf " + wolf + " has recovered.");
+                }
             }
         }
     }
