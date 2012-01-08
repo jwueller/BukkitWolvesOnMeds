@@ -2,83 +2,61 @@ package net.elusive92.bukkit.wolvesonmeds;
 
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Wolf;
-import org.bukkit.event.entity.CreatureSpawnEvent;
-import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.entity.EntityListener;
-import org.bukkit.event.entity.EntityTameEvent;
+import org.bukkit.event.entity.*;
 
 /**
  * Listens for all wolves that might be tamed or spawned.
  */
-public class WOMEntityListener extends EntityListener {
+public class WolfListener extends EntityListener {
 
-    /**
-     * Stores a reference to the main plugin class.
-     */
-    private final WolvesOnMeds plugin;
+    private final WolvesOnMeds plugin; // reference to the main plugin class
 
     /**
      * Creates an entity listener.
-     * 
+     *
      * @param plugin main plugin class
      */
-    public WOMEntityListener(WolvesOnMeds plugin) {
+    public WolfListener(WolvesOnMeds plugin) {
         this.plugin = plugin;
     }
 
     /**
      * Notifies the plugin when wolves are spawned.
-     * 
-     * @param event 
+     *
+     * @param event
      */
     @Override
     public void onCreatureSpawn(CreatureSpawnEvent event) {
-        if (event.isCancelled()) {
-            return;
-        }
-        
+        if (event.isCancelled()) return;
         Entity entity = event.getEntity();
-        
-        if (entity instanceof Wolf) {
-            plugin.dispatch((Wolf) entity, null);
-        }
+        if (entity instanceof Wolf) plugin.dispatch((Wolf) entity);
     }
-    
+
     /**
      * Notifies the plugin when wolves are tamed.
-     * 
-     * @param event 
+     *
+     * @param event
      */
     @Override
     public void onEntityTame(EntityTameEvent event) {
-        if (event.isCancelled()) {
-            return;
-        }
-        
+        if (event.isCancelled()) return;
         Entity entity = event.getEntity();
-        
-        if (entity instanceof Wolf) {
-            plugin.dispatch((Wolf) entity, null);
-        }
+        if (entity instanceof Wolf) plugin.dispatch((Wolf) entity);
     }
 
     /**
      * Notifies a plugin if a wolf gets wounded.
-     * 
-     * @param event 
+     *
+     * @param event
      */
     @Override
     public void onEntityDamage(EntityDamageEvent event) {
-        if (event.isCancelled()) {
-            return;
-        }
-        
+        if (event.isCancelled()) return;
         Entity entity = event.getEntity();
-        
+
         if (entity instanceof Wolf) {
             Wolf wolf = (Wolf) entity;
-            
+
             // We need to override the health manually, since the damage is not
             // yet included in the health property of the wolf.
             plugin.dispatch(wolf, wolf.getHealth() - event.getDamage());
@@ -88,16 +66,15 @@ public class WOMEntityListener extends EntityListener {
 
     /**
      * Removes dead wolves from the managed list.
-     * 
-     * @param event 
+     *
+     * @param event
      */
     @Override
     public void onEntityDeath(EntityDeathEvent event) {
         Entity entity = event.getEntity();
-        
-        // Ensure that dead wolves are removed from the managed list.
+
         if (entity instanceof Wolf) {
-            plugin.dispatch((Wolf) entity, null);
+            plugin.dispatch((Wolf) entity);
         }
     }
 }
