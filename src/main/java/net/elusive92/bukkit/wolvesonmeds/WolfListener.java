@@ -2,12 +2,18 @@ package net.elusive92.bukkit.wolvesonmeds;
 
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Wolf;
-import org.bukkit.event.entity.*;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityTameEvent;
 
 /**
  * Listens for all wolves that might be tamed or spawned.
  */
-public class WolfListener extends EntityListener {
+public class WolfListener implements Listener {
 
     private final WolvesOnMeds plugin; // reference to the main plugin class
 
@@ -25,7 +31,7 @@ public class WolfListener extends EntityListener {
      *
      * @param event
      */
-    @Override
+    @EventHandler
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         if (event.isCancelled()) return;
         Entity entity = event.getEntity();
@@ -37,11 +43,17 @@ public class WolfListener extends EntityListener {
      *
      * @param event
      */
-    @Override
+    @EventHandler
     public void onEntityTame(EntityTameEvent event) {
         if (event.isCancelled()) return;
         Entity entity = event.getEntity();
-        if (entity instanceof Wolf) plugin.dispatch((Wolf) entity);
+
+        if (entity instanceof Wolf) {
+            Wolf wolf = (Wolf) entity;
+
+            plugin.dispatch(wolf);
+            plugin.resetDelay(wolf);
+        }
     }
 
     /**
@@ -49,7 +61,7 @@ public class WolfListener extends EntityListener {
      *
      * @param event
      */
-    @Override
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onEntityDamage(EntityDamageEvent event) {
         if (event.isCancelled()) return;
         Entity entity = event.getEntity();
@@ -69,12 +81,9 @@ public class WolfListener extends EntityListener {
      *
      * @param event
      */
-    @Override
+    @EventHandler
     public void onEntityDeath(EntityDeathEvent event) {
         Entity entity = event.getEntity();
-
-        if (entity instanceof Wolf) {
-            plugin.dispatch((Wolf) entity);
-        }
+        if (entity instanceof Wolf) plugin.dispatch((Wolf) entity);
     }
 }

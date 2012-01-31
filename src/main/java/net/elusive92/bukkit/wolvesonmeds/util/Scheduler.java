@@ -1,6 +1,6 @@
 package net.elusive92.bukkit.wolvesonmeds.util;
 
-import net.elusive92.bukkit.wolvesonmeds.WolvesOnMeds;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitScheduler;
 
 /**
@@ -11,7 +11,7 @@ public class Scheduler {
 
     private static final int INVALID = -1; // represents the value that indicates an invalid task ID
 
-    private final WolvesOnMeds plugin; // reference to the main plugin class
+    private final Plugin plugin; // reference to the main plugin class
     private final Runnable task; // task that is scheduled
     private final boolean async; // whether to schedule the task asynchronously
     private int taskId = INVALID; // ID that the scheduler assigns to the scheduled task
@@ -19,11 +19,10 @@ public class Scheduler {
     /**
      * Creates a heal task.
      *
-     * @param plugin
      * @param task
      * @param async whether to schedule the task asynchronously
      */
-    public Scheduler(WolvesOnMeds plugin, Runnable task, boolean async) {
+    public Scheduler(Plugin plugin, Runnable task, boolean async) {
         this.plugin = plugin;
         this.task = task;
         this.async = async;

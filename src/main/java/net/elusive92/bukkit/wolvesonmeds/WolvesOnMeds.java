@@ -1,17 +1,20 @@
 package net.elusive92.bukkit.wolvesonmeds;
 
 import java.util.*;
+import net.elusive92.bukkit.wolvesonmeds.util.MathUtil;
+import net.elusive92.bukkit.wolvesonmeds.util.PermissionUtil;
 import net.elusive92.bukkit.wolvesonmeds.util.Scheduler;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Tameable;
 import org.bukkit.entity.Wolf;
-import org.bukkit.event.Event;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class WolvesOnMeds extends JavaPlugin {
 
     private WolfListener wolfListener; // listener for anything that happens to the wolves
+    private OwnerListener ownerListener; // listener for anythign that relates to the owners of a wolf
     private Scheduler healTaskScheduler; // scheduler for the heal task
 
     private Set<Wolf> recoveringWolves; // wolves that need to be considered by the heal task
@@ -31,6 +34,7 @@ public class WolvesOnMeds extends JavaPlugin {
         // make sure that the /reload command does not cause tons of memory
         // leaks).
         wolfListener = new WolfListener(this);
+        ownerListener = new OwnerListener(this);
         healTaskScheduler = new Scheduler(this, new HealTask(this), false);
         recoveringWolves = new HashSet<Wolf>();
         recoveryDelays = new HashMap<Wolf, Long>();
@@ -41,13 +45,11 @@ public class WolvesOnMeds extends JavaPlugin {
         saveConfig();
 
         // Register event listeners.
-        getServer().getPluginManager().registerEvent(Event.Type.CREATURE_SPAWN, wolfListener, Event.Priority.High, this);
-        getServer().getPluginManager().registerEvent(Event.Type.ENTITY_DAMAGE, wolfListener, Event.Priority.High, this);
-        getServer().getPluginManager().registerEvent(Event.Type.ENTITY_DEATH, wolfListener, Event.Priority.High, this);
-        getServer().getPluginManager().registerEvent(Event.Type.ENTITY_TAME, wolfListener, Event.Priority.High, this);
+        getServer().getPluginManager().registerEvents(wolfListener, this);
+        getServer().getPluginManager().registerEvents(ownerListener, this);
 
         // Notify the console.
-        log("v" + getDescription().getVersion() + " enabled.");
+        System.out.println(this + " enabled.");
     }
 
     /**
@@ -65,7 +67,7 @@ public class WolvesOnMeds extends JavaPlugin {
         recoveryDelays = null;
 
         // Notify the console.
-        log("v" + getDescription().getVersion() + " disabled.");
+        System.out.println(this + " disabled.");
     }
 
     /**
@@ -86,10 +88,20 @@ public class WolvesOnMeds extends JavaPlugin {
         // Convert seconds to ticks.
         recoveryDurationTicks = Math.max(getConfig().getInt("heal.duration"), 1) * 20;
         recoveryDelayTicks = getConfig().getInt("heal.delay") * 20;
+        dlog("duration: " + recoveryDurationTicks + "; delay: " + recoveryDelayTicks);
 
         // Calculate the interval at which the wolves should be healed.
         recoveryIntervalTicks = recoveryDurationTicks / maxHealth;
 
+        // Find all wounded tamed wolves that are currently on the server.
+        dispatchAll();
+    }
+
+    /**
+     * Makes sure that all wolves are tracked. This needs to be done when the
+     * configuration is loaded of if a player joins or leaves.
+     */
+    public void dispatchAll() {
         // Find all wounded tamed wolves that are currently on the server.
         for (World world : getServer().getWorlds()) {
             for (Entity entity : world.getEntities()) {
@@ -121,11 +133,13 @@ public class WolvesOnMeds extends JavaPlugin {
      *               wolf is wounded
      */
     public void dispatch(Wolf wolf, int health) {
+        dlog("Dispatching wolf " + wolf.getUniqueId() + ".");
+
         // Tamed wounded wolves get added to the set of recovering wolves if
         // their maximum recovery health is not reached.
-        if (wolf.isTamed() && health < maxHealth && health >= minHealth) {
+        if (!wolf.isDead() && isHealable(wolf) && health < maxHealth && health >= minHealth) {
             recoveringWolves.add(wolf);
-            dlog("Wolf " + wolf.hashCode() + " is recovering.");
+            dlog("Wolf " + wolf.getUniqueId() + " is recovering.");
 
             // Make sure that the heal task is scheduled, since there is
             // something to be healed.
@@ -143,7 +157,8 @@ public class WolvesOnMeds extends JavaPlugin {
      * @param wolf
      */
     public void resetDelay(Wolf wolf) {
-        if (recoveryDelayTicks > 0 && recoveringWolves.contains(wolf)) {
+        dlog("Reset delay for wolf " + wolf.getUniqueId() + " to " + recoveryDelayTicks + ".");
+        if (recoveryDelayTicks > 0 && hasDelayedHealing(wolf) && recoveringWolves.contains(wolf)) {
             recoveryDelays.put(wolf, recoveryDelayTicks);
         }
     }
@@ -169,7 +184,7 @@ public class WolvesOnMeds extends JavaPlugin {
                 // Decrease the remaining delay.
                 if (remainingDelay > 0) {
                     recoveryDelays.put(wolf, remainingDelay);
-                    dlog("Decreased the delay of wolf " + wolf.hashCode() + " to " + ((double) remainingDelay) / 20.0 + " seconds.");
+                    dlog("Decreased the delay of wolf " + wolf.getUniqueId() + " to " + ((double) remainingDelay) / 20.0 + " seconds.");
 
                     // Do not heal this wolf, since the remaining delay is not
                     // zero yet.
@@ -185,13 +200,13 @@ public class WolvesOnMeds extends JavaPlugin {
 
             if (!event.isCancelled()) {
                 wolf.setHealth(Math.min(wolf.getHealth() + event.getAmount(), 20));
-                dlog("Wolf " + wolf.hashCode() + " was healed to " + wolf.getHealth() + "/" + maxHealth + ".");
+                dlog("Wolf " + wolf.getUniqueId() + " was healed to " + wolf.getHealth() + "/" + maxHealth + ".");
 
                 // We need to make sure that the wolf is removed from the set of
                 // wounded tamed wolves after it has been completely healed.
                 if (wolf.getHealth() >= maxHealth) {
                     itr.remove();
-                    dlog("Wolf " + wolf.hashCode() + " has recovered.");
+                    dlog("Wolf " + wolf.getUniqueId() + " has recovered.");
                 }
             }
         }
@@ -204,12 +219,33 @@ public class WolvesOnMeds extends JavaPlugin {
     }
 
     /**
+     * Returns whether a wolf can be healed.
+     *
+     * @param tameable
+     * @return whether it can be healed
+     */
+    private boolean isHealable(Tameable tameable) {
+        if (!tameable.isTamed()) return false;
+        return PermissionUtil.hasPermission(tameable, "heal");
+    }
+
+    /**
+     * Returns whether a wolf has a healing delay.
+     *
+     * @param tameable
+     * @return whether it has a delay
+     */
+    private boolean hasDelayedHealing(Tameable tameable) {
+        return !PermissionUtil.hasPermission(tameable, "no-delay");
+    }
+
+    /**
      * Schedules the heal task.
      */
     private void scheduleHealTask() {
         dlog("Scheduling heal task.");
         if (!healTaskScheduler.schedule(recoveryIntervalTicks)) {
-            log("Failed to schedule wolf healing task.");
+            throw new RuntimeException("Failed to schedule wolf healing task.");
         }
     }
 
@@ -225,11 +261,11 @@ public class WolvesOnMeds extends JavaPlugin {
      * Converts a health configuration value (range from 0 to 100) to a real
      * health unit and ensures that it is in the valid range (1 to 20).
      *
-     * @param
+     * @param health percentage
      * @return health unit
      */
     private int getHealthUnits(int health) {
-        return Math.min(Math.max((int) Math.ceil(((double) health) / 5.0), 1), 20);
+        return MathUtil.clamp((int) Math.ceil(((double) health) / 5.0), 1, 20);
     }
 
     /**

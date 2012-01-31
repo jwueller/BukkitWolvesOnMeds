@@ -1,9 +1,22 @@
 # ------------------------------------------------------------------------------
 # WolvesOnMeds plugin configuration
 # ------------------------------------------------------------------------------
+#
+# heal.min-health
+#   the wolf will only be healed if he has at least this amount of health (in %)
+# heal.max-health
+#   the wolf is never healed beyond that amount of health (in %)
+# heal.duration
+#   the amount of time it takes to heal a wolf from 0-100% health (in seconds)
+# heal.delay
+#   the amount of time it takes to start healing a wolf after he has left combat
+#   (in seconds)
+# debug
+#   whether to print debug information to the console
+#
 heal:
-  max-health: 100
   min-health: 0
+  max-health: 100
   duration: 60
   delay: 10
 debug: false
